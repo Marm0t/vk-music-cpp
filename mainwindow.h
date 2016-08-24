@@ -68,7 +68,6 @@ private slots:
     void retryAuthSLot(){setState(NotStarted);}
     void clearCacheSlot();
 
-    void debugSlot(){qDebug() << "DEBUG SLOT CALLED";}
 };
 
 #endif // MAINWINDOW_H

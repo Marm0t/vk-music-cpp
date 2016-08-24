@@ -101,8 +101,6 @@ void MainWindow::requestToken()
     connect(_authWebView, SIGNAL(loadProgress(int)), this, SLOT(tokenViewloadProgressSlot(int)));
     connect(_authWebView, SIGNAL(loadFinished(bool)), this, SLOT(tokenViewLoadFinishedSlot(bool)));
     connect(_authWebView, SIGNAL(urlChanged(QUrl)), this, SLOT(tokenViewUrlChangedSlot(QUrl)));
-    connect(_authWebView, SIGNAL(destroyed(QObject*)), this, SLOT(debugSlot()));
-
 
     _authWebView->load(QUrl("https://oauth.vk.com/authorize"
                     "?client_id=5601291"
