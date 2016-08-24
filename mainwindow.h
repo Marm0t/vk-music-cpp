@@ -6,7 +6,9 @@
 #include <QDebug>
 #include <QWebEngineView>
 #include <QUrl>
-
+#include <QWebEngineProfile>
+#include <QWebEngineCookieStore>
+#include <QPushButton>
 
 
 namespace Ui {
@@ -40,11 +42,15 @@ private:
     QString _token;
     QString _lastError;
 
+    QPushButton *reconnectButton;
+    QPushButton *cacheButton;
+
     void setState(State_t iNewState){qDebug() << "New state: " <<iNewState; _state = iNewState; emit stateChangedSignal(iNewState);}
     void setStatus(const QString& iStatus){statusBar()->showMessage(iStatus);}
-
-
     void cleanMainWidget();
+
+    void requestToken();
+
 
 signals:
     void stateChangedSignal(State_t newState);
@@ -55,12 +61,14 @@ private slots:
     void stateChangedSlot(State_t iNewState);
 
     // token view slots
-    void requestToken();
     void tokenViewLoadStartedSlot(){setStatus("Start load for "+_authWebView->url().host());}
     void tokenViewloadProgressSlot(int iProgress){setStatus(QString::number(iProgress)+"% "+_authWebView->url().host());}
     void tokenViewLoadFinishedSlot(bool iResult);
     void tokenViewUrlChangedSlot(const QUrl &url);
+    void retryAuthSLot(){setState(NotStarted);}
+    void clearCacheSlot();
 
+    void debugSlot(){qDebug() << "DEBUG SLOT CALLED";}
 };
 
 #endif // MAINWINDOW_H

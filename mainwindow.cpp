@@ -1,15 +1,16 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QUrlQuery>
-#include <QPushButton>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow)
+    ui(new Ui::MainWindow),
+    _authWebView(0),reconnectButton(0),cacheButton(0)
 {
     // configure UI
     ui->setupUi(this);
     statusBar()->setSizeGripEnabled(false);
+    setFixedSize(size());
 
     // configure all connections
     connect(statusBar(), SIGNAL(messageChanged(QString)), this, SLOT(statusMessageChangedSlot(QString)));
@@ -27,23 +28,34 @@ MainWindow::~MainWindow()
 
 void MainWindow::stateChangedSlot(State_t iNewState)
 {
-    QPushButton *reconnectButton;
     switch (iNewState)
     {
         case NotStarted:
+            cleanMainWidget();
             requestToken();
             break;
-        case TokenRequested: // nothing to be done here
+        case TokenRequested: // nothing to do here
             break;
-
-        case TokenRecvd:
-        break;
 
         case TokenFailed:
             cleanMainWidget();
             reconnectButton = new QPushButton("RECONNECT", ui->_mainWidget);
-            connect (reconnectButton, SIGNAL(clicked(bool)), this, SLOT(requestToken()));
+            connect (reconnectButton, SIGNAL(clicked(bool)), this, SLOT(retryAuthSLot()));
             reconnectButton->show();
+            cacheButton = new QPushButton("CLEAR CACHE", ui->_mainWidget);
+            cacheButton->setGeometry(reconnectButton->geometry().x()+reconnectButton->geometry().width() + 5,
+                                     reconnectButton->geometry().y(),
+                                     reconnectButton->geometry().width(),
+                                     reconnectButton->geometry().height());
+            connect (cacheButton, SIGNAL(clicked(bool)), this, SLOT(clearCacheSlot()));
+            cacheButton->show();
+        break;
+
+        case TokenRecvd:
+            reconnectButton->deleteLater();
+            cacheButton->deleteLater();
+            _authWebView->deleteLater();
+
         break;
 
         case AudioListRequested:
@@ -56,29 +68,49 @@ void MainWindow::stateChangedSlot(State_t iNewState)
 
 void MainWindow::cleanMainWidget()
 {
-    while ( QWidget* w = ui->_mainWidget->findChild<QWidget*>() ) delete w;
+    if (reconnectButton)
+    {
+        delete reconnectButton;
+        reconnectButton = 0;
+    }
+    if (cacheButton)
+    {
+        delete cacheButton;
+        cacheButton = 0;
+    }
+
+/*
+   while ( QWidget* w = ui->_mainWidget->findChild<QWidget*>() )
+   {
+       //delete w;
+       //w->close();
+   }
+*/
 }
 
-// Token-related methods and slots
 
+// Token-related methods and slots
 
 void MainWindow::requestToken()
 {
     setState(TokenRequested);
+    //if (_authWebView) {_authWebView->deleteLater();}
+
     _authWebView = new QWebEngineView(ui->_mainWidget);
     connect(_authWebView, SIGNAL(loadStarted()), this, SLOT(tokenViewLoadStartedSlot()));
     connect(_authWebView, SIGNAL(loadProgress(int)), this, SLOT(tokenViewloadProgressSlot(int)));
     connect(_authWebView, SIGNAL(loadFinished(bool)), this, SLOT(tokenViewLoadFinishedSlot(bool)));
     connect(_authWebView, SIGNAL(urlChanged(QUrl)), this, SLOT(tokenViewUrlChangedSlot(QUrl)));
+    connect(_authWebView, SIGNAL(destroyed(QObject*)), this, SLOT(debugSlot()));
+
 
     _authWebView->load(QUrl("https://oauth.vk.com/authorize"
                     "?client_id=5601291"
                     "&display=page"
                     "&redirect_uri=https://oauth.vk.com/blank.html"
-                    "&scope=friends"
+                    "&scope=friends,photos,audio,video,docs,status,wall,groups,messages,email"
                     "&response_type=token"
                     "&v=5.53"));
-    //_authWebView->load(QUrl("https://blahblah.bl"));
     _authWebView->show();
 }
 
@@ -87,6 +119,8 @@ void MainWindow::tokenViewLoadFinishedSlot(bool iResult)
     if (!iResult)
     {
         setStatus("Cannot connect to "+_authWebView->url().host());
+        _authWebView->stop();
+        _authWebView->deleteLater();
         setState(TokenFailed);
     }
     else
@@ -98,18 +132,31 @@ void MainWindow::tokenViewLoadFinishedSlot(bool iResult)
 void MainWindow::tokenViewUrlChangedSlot(const QUrl &url)
 {
     qDebug()<<"New url: " << url.toString();
-    QUrlQuery aQuery(url);
+    // hacky replace as VK returns token separated with #
+    QString aStr = url.toString().replace("#", "?");
+    QUrlQuery aQuery(  QUrl(aStr).query() );
+
     if (aQuery.hasQueryItem("access_token"))
     {
+        _authWebView->stop();
+        _authWebView->deleteLater();
         setStatus( "voila! we got the token!");
         _token = aQuery.queryItemValue("access_token");
         setState(TokenRecvd);
     }
     if(aQuery.hasQueryItem("error"))
     {
-        _lastError = aQuery.queryItemValue("error");
+        _lastError = aQuery.queryItemValue("error") + ": " + aQuery.queryItemValue("error_description");
+        _authWebView->stop();
+        _authWebView->deleteLater();
         setStatus( "Error: " + _lastError);
         setState(TokenFailed);
     }
 }
 
+void MainWindow::clearCacheSlot()
+{
+    QWebEngineProfile::defaultProfile()->clearHttpCache();
+    QWebEngineProfile::defaultProfile()->clearAllVisitedLinks();
+    QWebEngineProfile::defaultProfile()->cookieStore()->deleteAllCookies();
+}
