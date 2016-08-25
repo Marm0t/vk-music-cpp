@@ -11,6 +11,3 @@ HEADERS  += mainwindow.h
 
 FORMS    += mainwindow.ui
 
-#target.path = $$[QT_INSTALL_EXAMPLES]/webenginewidgets/minimal
-#INSTALLS += target
-

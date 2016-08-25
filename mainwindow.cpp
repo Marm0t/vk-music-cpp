@@ -12,9 +12,13 @@ MainWindow::MainWindow(QWidget *parent) :
     statusBar()->setSizeGripEnabled(false);
     setFixedSize(size());
 
+    // initialize network manager
+    _netManager = new QNetworkAccessManager(this);
+
     // configure all connections
     connect(statusBar(), SIGNAL(messageChanged(QString)), this, SLOT(statusMessageChangedSlot(QString)));
     connect(this, SIGNAL(stateChangedSignal(State_t)), this, SLOT(stateChangedSlot(State_t)));
+    connect(_netManager, SIGNAL(finished(QNetworkReply*)), this, SLOT(replyReceivedSlot(QNetworkReply*)));
 
     // set initial state
     setState(NotStarted);
@@ -52,10 +56,11 @@ void MainWindow::stateChangedSlot(State_t iNewState)
         break;
 
         case TokenRecvd:
-            reconnectButton->deleteLater();
-            cacheButton->deleteLater();
+            //reconnectButton->deleteLater();
+            //cacheButton->deleteLater();
+            cleanMainWidget();
             _authWebView->deleteLater();
-
+            requestAudios();
         break;
 
         case AudioListRequested:
@@ -88,8 +93,9 @@ void MainWindow::cleanMainWidget()
 */
 }
 
-
-// Token-related methods and slots
+/************************************
+ * Token-related methods and slots
+ ************************************/
 
 void MainWindow::requestToken()
 {
@@ -157,4 +163,25 @@ void MainWindow::clearCacheSlot()
     QWebEngineProfile::defaultProfile()->clearHttpCache();
     QWebEngineProfile::defaultProfile()->clearAllVisitedLinks();
     QWebEngineProfile::defaultProfile()->cookieStore()->deleteAllCookies();
+}
+
+
+
+/************************************
+ * Token-related methods and slots
+ ************************************/
+
+void MainWindow::requestAudios()
+{
+    QString aUrlStr = "https://api.vk.com/method/audio.get?access_token="+_token;
+
+//    qDebug() << "Conenct to host encrypted" ;
+//    _netManager->connectToHostEncrypted("api.vk.com");
+
+    qDebug() << "GET from " << aUrlStr;
+     QNetworkReply* aReply = _netManager->get(QNetworkRequest(QUrl(aUrlStr)));
+     connect(aReply, SIGNAL(finished()), this, SLOT(audiosFinishedSlot()));
+     connect(aReply, SIGNAL(sslErrors(QList<QSslError>)), aReply, SLOT(ignoreSslErrors()));
+     connect(_netManager, SIGNAL(encrypted(QNetworkReply*)), this, SLOT(encryptedSlot(QNetworkReply*)));
+     setState(AudioListRequested);
 }
