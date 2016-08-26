@@ -10,7 +10,7 @@
 #include <QWebEngineCookieStore>
 #include <QPushButton>
 #include <QNetworkReply>
-
+#include <QJsonArray>
 
 namespace Ui {
 class MainWindow;
@@ -48,6 +48,8 @@ private:
 
     QNetworkAccessManager *_netManager;
 
+    QJsonArray _audioList;
+
 
     void setState(State_t iNewState){qDebug() << "New state: " <<iNewState; _state = iNewState; emit stateChangedSignal(iNewState);}
     void setStatus(const QString& iStatus){statusBar()->showMessage(iStatus);}
@@ -55,6 +57,8 @@ private:
 
     void requestToken();
     void requestAudios();
+
+    void showAudioTable();
 
 
 signals:
@@ -64,10 +68,13 @@ signals:
 private slots:
     void statusMessageChangedSlot(const QString& iNewStatus){qDebug() << "New status message: " << iNewStatus;}
     void stateChangedSlot(State_t iNewState);
-    void replyReceivedSlot(QNetworkReply* iReply){qDebug() << "Reply received: "<< iReply->readAll();}
+    void replyReceivedSlot(QNetworkReply* iReply)
+    {
+        qDebug() << "Reply received from " << iReply->url().host();
+    }
 
     // token view slots
-    void tokenViewLoadStartedSlot(){setStatus("Start load for "+_authWebView->url().host());}
+    void tokenViewLoadStartedSlot(){setStatus("Loading from "+_authWebView->url().host());}
     void tokenViewloadProgressSlot(int iProgress){setStatus(QString::number(iProgress)+"% "+_authWebView->url().host());}
     void tokenViewLoadFinishedSlot(bool iResult);
     void tokenViewUrlChangedSlot(const QUrl &url);
@@ -76,21 +83,9 @@ private slots:
 
     // request audios slots
     void audiosDownloadProgressSlot(qint64 bytesReceived, qint64 bytesTotal){"Getting audios list: "+QString::number(100 * bytesReceived/bytesTotal)+"%";}
-    void audiosFinishedSlot()
-    {
-        QNetworkReply *aReply = qobject_cast<QNetworkReply*>(this->sender());
-        int statusCode = aReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        qDebug() << "Reply ["<<statusCode<<"]: " << aReply->readAll();
-        // if good:
-        // setState(AudioListRequested);
-        // else:
-        // setState(AudioListFailed);
-    }
+    void audiosFinishedSlot();
 
-    void encryptedSlot(QNetworkReply* reply)
-    {
-        qDebug() << "ENCRYPTED!";
-    }
+    void encryptedSlot(QNetworkReply* ){qDebug() << "ENCRYPTED!";}
 };
 
 #endif // MAINWINDOW_H

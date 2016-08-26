@@ -2,6 +2,16 @@
 #include "ui_mainwindow.h"
 #include <QUrlQuery>
 
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+
+
+#include <QTableWidget>
+#include <QTableWidgetItem>
+#include <QScrollBar>
+
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow),
@@ -19,6 +29,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(statusBar(), SIGNAL(messageChanged(QString)), this, SLOT(statusMessageChangedSlot(QString)));
     connect(this, SIGNAL(stateChangedSignal(State_t)), this, SLOT(stateChangedSlot(State_t)));
     connect(_netManager, SIGNAL(finished(QNetworkReply*)), this, SLOT(replyReceivedSlot(QNetworkReply*)));
+
 
     // set initial state
     setState(NotStarted);
@@ -38,10 +49,20 @@ void MainWindow::stateChangedSlot(State_t iNewState)
             cleanMainWidget();
             requestToken();
             break;
-        case TokenRequested: // nothing to do here
+        case TokenRequested:        // nothing to do here
+        case AudioListRequested:    // nothing to do here
             break;
 
+        case TokenRecvd:
+            //reconnectButton->deleteLater();
+            //cacheButton->deleteLater();
+            cleanMainWidget();
+            _authWebView->deleteLater();
+            requestAudios();
+        break;
+
         case TokenFailed:
+        case AudioListFailed:
             cleanMainWidget();
             reconnectButton = new QPushButton("RECONNECT", ui->_mainWidget);
             connect (reconnectButton, SIGNAL(clicked(bool)), this, SLOT(retryAuthSLot()));
@@ -53,19 +74,11 @@ void MainWindow::stateChangedSlot(State_t iNewState)
                                      reconnectButton->geometry().height());
             connect (cacheButton, SIGNAL(clicked(bool)), this, SLOT(clearCacheSlot()));
             cacheButton->show();
-        break;
+            break;
 
-        case TokenRecvd:
-            //reconnectButton->deleteLater();
-            //cacheButton->deleteLater();
-            cleanMainWidget();
-            _authWebView->deleteLater();
-            requestAudios();
-        break;
-
-        case AudioListRequested:
         case AudioListRcvd:
-        case AudioListFailed:
+            showAudioTable();
+
         case AudioListDisplayed:
             qDebug()<< "Not implemented state was set: " << iNewState;
     }
@@ -168,20 +181,97 @@ void MainWindow::clearCacheSlot()
 
 
 /************************************
- * Token-related methods and slots
+ * Audios-related methods and slots
  ************************************/
 
 void MainWindow::requestAudios()
 {
-    QString aUrlStr = "https://api.vk.com/method/audio.get?access_token="+_token;
-
-//    qDebug() << "Conenct to host encrypted" ;
-//    _netManager->connectToHostEncrypted("api.vk.com");
-
-    qDebug() << "GET from " << aUrlStr;
-     QNetworkReply* aReply = _netManager->get(QNetworkRequest(QUrl(aUrlStr)));
+     QUrl aUrl(QString("https://api.vk.com/method/audio.get?access_token="+_token+"&need_user=1"));
+     setStatus("Request audios from " + aUrl.host());
+     QNetworkReply* aReply = _netManager->get(QNetworkRequest(aUrl));
      connect(aReply, SIGNAL(finished()), this, SLOT(audiosFinishedSlot()));
      connect(aReply, SIGNAL(sslErrors(QList<QSslError>)), aReply, SLOT(ignoreSslErrors()));
      connect(_netManager, SIGNAL(encrypted(QNetworkReply*)), this, SLOT(encryptedSlot(QNetworkReply*)));
      setState(AudioListRequested);
 }
+
+void MainWindow::audiosFinishedSlot()
+{
+    QNetworkReply *aReply = qobject_cast<QNetworkReply*>(this->sender());
+    int statusCode = aReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    setStatus("Audio reply received. Status "+aReply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString());
+
+    QByteArray aStrReply = aReply->readAll();
+    qDebug() << "Reply ["<<statusCode<<"] of " << aStrReply.size() << " symbols";
+    qDebug() << "headers" << aReply->rawHeaderList();
+    qDebug() << "error" << aReply->error();
+
+    QJsonParseError err;
+    QJsonDocument doc = QJsonDocument::fromJson(aStrReply, &err);
+
+    if (err.error != QJsonParseError::NoError)
+    {
+        setStatus("Error: " + err.errorString());
+        setState(AudioListFailed);
+        return;
+    }
+    if (doc.object().contains("error"))
+    {
+        setStatus("Error: " + doc.object().value("error").toObject().value("error_msg").toString());
+        setState(AudioListFailed);
+        return;
+    }
+    if (!doc.object().contains("response"))
+    {
+        setStatus("Error: incorrect reply format");
+        setState(AudioListFailed);
+        return;
+    }
+    _audioList = doc.object().value("response").toArray();
+    _audioList.removeFirst();
+    setStatus(QString::number(_audioList.size()-1)
+              + " audios found for "
+              + doc.object().value("response").toArray().at(0).toObject().value("name").toString());
+
+    setState(AudioListRcvd);
+}
+
+
+void MainWindow::showAudioTable()
+{
+    setStatus("Building audios table");
+    QTableWidget *aTable = new QTableWidget(ui->_mainWidget);
+    aTable->setGeometry(0,0,
+                        ui->_mainWidget->geometry().width(),
+                        ui->_mainWidget->geometry().height());
+
+    aTable->setColumnCount(3);
+    aTable->setRowCount(_audioList.size()-1);
+
+
+    int width = aTable->geometry().width();
+    aTable->setColumnWidth(0, width*.3);
+    aTable->setColumnWidth(1, width*.5);
+    aTable->setColumnWidth(2, width*.175);
+    QStringList hdrs;
+    hdrs.push_back("Artist");
+    hdrs.push_back("Title");
+    hdrs.push_back("");
+    aTable->setHorizontalHeaderLabels(hdrs);
+    aTable->verticalHeader()->hide();
+
+
+    int row = 0;
+    foreach (QJsonValue obj, _audioList) {
+        QTableWidgetItem *artistItem = new QTableWidgetItem(obj.toObject().value("artist").toString());
+        artistItem->setFlags(Qt::NoItemFlags|Qt::ItemIsEnabled);
+        aTable->setItem(row, 0, artistItem);
+        QTableWidgetItem *titleItem = new QTableWidgetItem(obj.toObject().value("title").toString());
+        titleItem->setFlags(Qt::NoItemFlags|Qt::ItemIsEnabled);
+        aTable->setItem(row, 1, titleItem);
+        ++row;
+    }
+    aTable->show();
+}
+
+
