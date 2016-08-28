@@ -11,11 +11,25 @@
 #include <QTableWidgetItem>
 #include <QScrollBar>
 
+#include <QFile>
+#include <QDataStream>
+#include <QMessageBox>
+
+void MainWindow::keyPressEvent(QKeyEvent* ke)
+{
+
+    if (ke->key()==Qt::Key_Escape && _state==AudioDownloading)
+    {
+        emit escPressed();
+    }
+    QMainWindow::keyPressEvent(ke); // base class implementation
+
+}
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow),
-    _authWebView(0),reconnectButton(0),cacheButton(0)
+    _authWebView(0),reconnectButton(0),cacheButton(0),_table(0)
 {
     // configure UI
     ui->setupUi(this);
@@ -80,7 +94,11 @@ void MainWindow::stateChangedSlot(State_t iNewState)
             showAudioTable();
 
         case AudioListDisplayed:
-            qDebug()<< "Not implemented state was set: " << iNewState;
+            // nothing to do here
+            break;
+        case AudioDownloading:
+
+            break;
     }
 }
 
@@ -234,44 +252,167 @@ void MainWindow::audiosFinishedSlot()
               + doc.object().value("response").toArray().at(0).toObject().value("name").toString());
 
     setState(AudioListRcvd);
+    aReply->deleteLater();
 }
 
 
 void MainWindow::showAudioTable()
 {
     setStatus("Building audios table");
-    QTableWidget *aTable = new QTableWidget(ui->_mainWidget);
-    aTable->setGeometry(0,0,
+    if (!_table)
+        _table = new QTableWidget(ui->_mainWidget);
+    _table->setGeometry(0,0,
                         ui->_mainWidget->geometry().width(),
                         ui->_mainWidget->geometry().height());
 
-    aTable->setColumnCount(3);
-    aTable->setRowCount(_audioList.size()-1);
+    _table->setColumnCount(3);
+    _table->setRowCount(_audioList.size()-1);
+    _table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    _table->setSelectionMode(QAbstractItemView::MultiSelection);
 
 
-    int width = aTable->geometry().width();
-    aTable->setColumnWidth(0, width*.3);
-    aTable->setColumnWidth(1, width*.5);
-    aTable->setColumnWidth(2, width*.175);
+    int width = _table->geometry().width();
+    _table->setColumnWidth(0, width*.3);
+    _table->setColumnWidth(1, width*.5);
+    _table->setColumnWidth(2, width*.175);
     QStringList hdrs;
     hdrs.push_back("Artist");
     hdrs.push_back("Title");
     hdrs.push_back("");
-    aTable->setHorizontalHeaderLabels(hdrs);
-    aTable->verticalHeader()->hide();
-
-
+    _table->setHorizontalHeaderLabels(hdrs);
+    _table->verticalHeader()->hide();
     int row = 0;
     foreach (QJsonValue obj, _audioList) {
         QTableWidgetItem *artistItem = new QTableWidgetItem(obj.toObject().value("artist").toString());
-        artistItem->setFlags(Qt::NoItemFlags|Qt::ItemIsEnabled);
-        aTable->setItem(row, 0, artistItem);
+        artistItem->setFlags(Qt::NoItemFlags|Qt::ItemIsEnabled|Qt::ItemIsUserCheckable|Qt::ItemIsSelectable	);
+        _table->setItem(row, 0, artistItem);
         QTableWidgetItem *titleItem = new QTableWidgetItem(obj.toObject().value("title").toString());
-        titleItem->setFlags(Qt::NoItemFlags|Qt::ItemIsEnabled);
-        aTable->setItem(row, 1, titleItem);
+        titleItem->setFlags(Qt::NoItemFlags|Qt::ItemIsEnabled|Qt::ItemIsUserCheckable|Qt::ItemIsSelectable	);
+        _table->setItem(row, 1, titleItem);
+        QTableWidgetItem *dldItem = new QTableWidgetItem(obj.toObject().value("url").toString());
+        dldItem->setFlags(Qt::NoItemFlags|Qt::ItemIsEnabled	);
+        _table->setItem(row, 2, dldItem);
         ++row;
     }
-    aTable->show();
+    connect(_table, SIGNAL(cellClicked(int,int)), this, SLOT(audiosTableCellClickedSlot(int,int)));
+    _table->show();
+    setStatus("Select audios to download or download them one by one");
+}
+
+void MainWindow::audiosTableCellClickedSlot(int row, int column)
+{
+    // download audio if third columd clicked
+    if (column == 2)
+    {
+        _table->setEnabled(false);
+
+        QString aDir = "";
+        QString aFilename = aDir
+                + _audioList.at(row).toObject().value("artist").toString()
+                + " - "
+                + _audioList.at(row).toObject().value("title").toString()
+                + ".mp3";
+        QString aUrl = _audioList.at(row).toObject().value("url").toString();
+        setStatus("Downloading " + aFilename + " from " + aUrl);
+
+        FileDownloader* aDownloader = new FileDownloader(aFilename, aUrl, _netManager);
+        // connect all signals to slots
+        connect(aDownloader, SIGNAL(downloaded(bool,QString)), this, SLOT(audioDownloaded(bool,QString)));
+        connect(aDownloader, SIGNAL(progressSignal(qint64,qint64,QString)), this, SLOT(audioDownloadingProgress(qint64,qint64,QString)));
+        connect(this, SIGNAL(escPressed()), aDownloader, SLOT(fileDownloadAbort()));
+
+        aDownloader->download();
+        setState(AudioDownloading);
+    }
 }
 
 
+void MainWindow::audioDownloaded(bool success, QString reason)
+{
+    if(!success)
+    {
+        QMessageBox::warning(this, "OOPS!", reason);
+    }
+    _table->setEnabled(true);
+    setStatus(reason);
+    setState(AudioListDisplayed);
+}
+
+
+
+/*******************
+ * FileDownloader
+ * *****************/
+void FileDownloader::download()
+{
+    // check if file already exist
+    if (QFile::exists(_filename))
+    {
+        emit downloaded(false, "File "+_filename+" already exists." );
+        return;
+    }
+    // start download
+    _reply = _netManager->get(QNetworkRequest(_url));
+
+    // connect all sugnals/slots for reply object
+    connect(_reply, SIGNAL(downloadProgress(qint64,qint64)), this, SLOT(fileDownloadProgressSLot(qint64, qint64)) );
+    connect(_reply, SIGNAL(finished()), this, SLOT(fileDownloadedSlot()));
+}
+
+
+void FileDownloader::fileDownloadedSlot()
+{
+    QNetworkReply *aReply = qobject_cast<QNetworkReply*>(this->sender());
+    int statusCode = aReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    QByteArray aData = aReply->readAll();
+    qDebug() << "Downloaded " << aData.size() << " bytes with status "<< statusCode << " for file " << _filename;
+    qDebug() << "error" << aReply->error();
+
+    if(aReply->error() != QNetworkReply::NoError)
+    {
+        emit downloaded(false, aReply->errorString());
+        return;
+    }
+    if (statusCode != 200)
+    {
+        emit downloaded(false, aReply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString());
+        return;
+    }
+    if (QFile::exists(_filename))
+    {
+        emit downloaded(false, "File "+_filename+" already exists");
+        return;
+    }
+
+    QFile file(_filename);
+    if (!file.open(QIODevice::WriteOnly))
+    {
+        emit downloaded(false, "Cannot create file "+_filename);
+        return;
+    }
+    qint64 aRes = file.write(aData);
+    if (aRes>1)
+    {
+        emit downloaded(true, "File saved ["+ _filename+"]");
+        file.close();
+
+    }else
+    {
+        emit downloaded(false, "Cannot write to the file ["+ _filename+"]: "+QString::number(aRes));
+        file.remove();
+    }
+    this->deleteLater();
+}
+
+
+void FileDownloader::fileDownloadProgressSLot(qint64 iRcvd, qint64 iTotal)
+{
+    emit progressSignal(iRcvd, iTotal, _filename);
+}
+
+void FileDownloader::fileDownloadAbort()
+{
+    _reply->abort();
+    _reply->deleteLater();
+    this->deleteLater();
+}
