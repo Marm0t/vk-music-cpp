@@ -13,6 +13,8 @@
 #include <QJsonArray>
 #include <QTableWidget>
 #include <QKeyEvent>
+#include <QLabel>
+#include <QLineEdit>
 
 namespace Ui {
 class MainWindow;
@@ -54,6 +56,11 @@ private:
     QJsonArray _audioList;
     QTableWidget *_table;
 
+    QString _directory;
+    QLineEdit* _dirLabel;
+    QPushButton* _dirButton;
+    QPushButton* _selectAllButton;
+    QPushButton* _unselectAllButton;
 
     void setState(State_t iNewState){qDebug() << "New state: " <<iNewState; _state = iNewState; emit stateChangedSignal(iNewState);}
     void setStatus(const QString& iStatus){statusBar()->showMessage(iStatus);}
@@ -77,6 +84,7 @@ private slots:
     void stateChangedSlot(State_t iNewState);
     void replyReceivedSlot(QNetworkReply* iReply){qDebug() << "Reply received from " << iReply->url().host();}
     void encryptedSlot(QNetworkReply* ){qDebug() << "ENCRYPTED!";}
+    void browse();
 
     // token view slots
     void tokenViewLoadStartedSlot(){setStatus("Loading from "+_authWebView->url().host());}
@@ -124,4 +132,5 @@ private:
 
 
 #endif // MAINWINDOW_H
+
 

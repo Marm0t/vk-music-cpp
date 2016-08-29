@@ -15,6 +15,10 @@
 #include <QDataStream>
 #include <QMessageBox>
 
+#include <QLayout>
+#include <QFileDialog>
+#include <QDir>
+
 void MainWindow::keyPressEvent(QKeyEvent* ke)
 {
 
@@ -29,7 +33,8 @@ void MainWindow::keyPressEvent(QKeyEvent* ke)
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow),
-    _authWebView(0),reconnectButton(0),cacheButton(0),_table(0)
+    _authWebView(0),reconnectButton(0),cacheButton(0),_table(0),_directory(QDir::currentPath()),
+    _dirLabel(0), _dirButton(0), _selectAllButton(0), _unselectAllButton(0)
 {
     // configure UI
     ui->setupUi(this);
@@ -114,14 +119,6 @@ void MainWindow::cleanMainWidget()
         delete cacheButton;
         cacheButton = 0;
     }
-
-/*
-   while ( QWidget* w = ui->_mainWidget->findChild<QWidget*>() )
-   {
-       //delete w;
-       //w->close();
-   }
-*/
 }
 
 /************************************
@@ -259,11 +256,40 @@ void MainWindow::audiosFinishedSlot()
 void MainWindow::showAudioTable()
 {
     setStatus("Building audios table");
-    if (!_table)
-        _table = new QTableWidget(ui->_mainWidget);
+
+    if(!_dirLabel) _dirLabel = new QLineEdit(_directory, ui->_mainWidget);
+    _dirLabel->setEnabled(false);
+    if(!_dirButton) _dirButton = new QPushButton("Browse", ui->_mainWidget);
+    if(!_selectAllButton) _selectAllButton = new QPushButton("Select all", ui->_mainWidget);
+    if(!_unselectAllButton) _unselectAllButton = new QPushButton("Unselect all", ui->_mainWidget);
+    if (!_table) _table = new QTableWidget(ui->_mainWidget);
+
+    QRect aMG = ui->_mainWidget->geometry(); // main widget geometry
+
+    _unselectAllButton->setGeometry(0+aMG.width()-_unselectAllButton->geometry().width(),
+                                    aMG.height()-_unselectAllButton->geometry().height(),
+                                   _dirButton->geometry().width(),
+                                   _dirButton->geometry().height());
+
+    _selectAllButton->setGeometry(_unselectAllButton->x() -_selectAllButton->geometry().width(),
+                                  aMG.height()-_selectAllButton->geometry().height(),
+                                  _selectAllButton->geometry().width(),
+                                  _selectAllButton->geometry().height());
+
+    _dirButton->setGeometry(_selectAllButton->x()-_dirButton->geometry().width(),
+                            aMG.height()-_dirButton->geometry().height(),
+                            _dirButton->geometry().width(),
+                            _dirButton->geometry().height());
+
+    _dirLabel->setGeometry(0,
+                           aMG.height()-_dirButton->geometry().height(),
+                           _dirButton->x(),
+                           _dirLabel->geometry().height());
+
+
     _table->setGeometry(0,0,
-                        ui->_mainWidget->geometry().width(),
-                        ui->_mainWidget->geometry().height());
+                        aMG.width(),
+                        aMG.height()-_dirButton->geometry().height());
 
     _table->setColumnCount(3);
     _table->setRowCount(_audioList.size()-1);
@@ -294,9 +320,31 @@ void MainWindow::showAudioTable()
         _table->setItem(row, 2, dldItem);
         ++row;
     }
+
+
+    // connections
+    connect(_dirButton, SIGNAL(clicked()), SLOT(browse()));
+    connect(_selectAllButton, SIGNAL(clicked()), _table, SLOT(selectAll()));
+    connect(_unselectAllButton, SIGNAL(clicked()), _table, SLOT(clearSelection()));
     connect(_table, SIGNAL(cellClicked(int,int)), this, SLOT(audiosTableCellClickedSlot(int,int)));
+
+    // show everything
+    _dirLabel->show();
+    _dirButton->show();
+    _selectAllButton->show();
+    _unselectAllButton->show();
     _table->show();
     setStatus("Select audios to download or download them one by one");
+}
+
+
+void MainWindow::browse()
+{
+    QString directory = QFileDialog::getExistingDirectory(this,
+                            tr("Find Files"), QDir::currentPath());
+    if (!directory.isEmpty()) _directory = directory;
+    _dirLabel->setText(_directory);
+
 }
 
 void MainWindow::audiosTableCellClickedSlot(int row, int column)
@@ -306,12 +354,12 @@ void MainWindow::audiosTableCellClickedSlot(int row, int column)
     {
         _table->setEnabled(false);
 
-        QString aDir = "";
-        QString aFilename = aDir
-                + _audioList.at(row).toObject().value("artist").toString()
+        QString aFilename = QDir(_directory).filePath(
+                _audioList.at(row).toObject().value("artist").toString()
                 + " - "
                 + _audioList.at(row).toObject().value("title").toString()
-                + ".mp3";
+                + ".mp3");
+
         QString aUrl = _audioList.at(row).toObject().value("url").toString();
         setStatus("Downloading " + aFilename + " from " + aUrl);
 
@@ -416,3 +464,4 @@ void FileDownloader::fileDownloadAbort()
     _reply->deleteLater();
     this->deleteLater();
 }
+
