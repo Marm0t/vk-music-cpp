@@ -19,6 +19,9 @@
 #include <QFileDialog>
 #include <QDir>
 
+#include <QItemSelectionModel>
+#include <QModelIndex>
+
 void MainWindow::keyPressEvent(QKeyEvent* ke)
 {
 
@@ -262,14 +265,20 @@ void MainWindow::showAudioTable()
     if(!_dirButton) _dirButton = new QPushButton("Browse", ui->_mainWidget);
     if(!_selectAllButton) _selectAllButton = new QPushButton("Select all", ui->_mainWidget);
     if(!_unselectAllButton) _unselectAllButton = new QPushButton("Unselect all", ui->_mainWidget);
+    if(!_downloadSelectedButton) _downloadSelectedButton = new QPushButton("Download selected", ui->_mainWidget);
     if (!_table) _table = new QTableWidget(ui->_mainWidget);
 
     QRect aMG = ui->_mainWidget->geometry(); // main widget geometry
 
-    _unselectAllButton->setGeometry(0+aMG.width()-_unselectAllButton->geometry().width(),
+    _downloadSelectedButton->setGeometry(0+aMG.width()-_downloadSelectedButton->geometry().width(),
+                                         aMG.height()-_downloadSelectedButton->geometry().height(),
+                                        _downloadSelectedButton->geometry().width(),
+                                        _downloadSelectedButton->geometry().height());
+
+    _unselectAllButton->setGeometry(_downloadSelectedButton->x()-_unselectAllButton->geometry().width(),
                                     aMG.height()-_unselectAllButton->geometry().height(),
-                                   _dirButton->geometry().width(),
-                                   _dirButton->geometry().height());
+                                   _unselectAllButton->geometry().width(),
+                                   _unselectAllButton->geometry().height());
 
     _selectAllButton->setGeometry(_unselectAllButton->x() -_selectAllButton->geometry().width(),
                                   aMG.height()-_selectAllButton->geometry().height(),
@@ -327,8 +336,10 @@ void MainWindow::showAudioTable()
     connect(_selectAllButton, SIGNAL(clicked()), _table, SLOT(selectAll()));
     connect(_unselectAllButton, SIGNAL(clicked()), _table, SLOT(clearSelection()));
     connect(_table, SIGNAL(cellClicked(int,int)), this, SLOT(audiosTableCellClickedSlot(int,int)));
+    connect(_downloadSelectedButton, SIGNAL(clicked(bool)), this, SLOT(audioDownloadAllClickedSlot()));
 
     // show everything
+    _downloadSelectedButton->show();
     _dirLabel->show();
     _dirButton->show();
     _selectAllButton->show();
@@ -352,7 +363,7 @@ void MainWindow::audiosTableCellClickedSlot(int row, int column)
     // download audio if third columd clicked
     if (column == 2)
     {
-        _table->setEnabled(false);
+        setTableButtonsEnabled(false);
 
         QString aFilename = QDir(_directory).filePath(
                 _audioList.at(row).toObject().value("artist").toString()
@@ -381,9 +392,60 @@ void MainWindow::audioDownloaded(bool success, QString reason)
     {
         QMessageBox::warning(this, "OOPS!", reason);
     }
-    _table->setEnabled(true);
+    setTableButtonsEnabled(true);
     setStatus(reason);
     setState(AudioListDisplayed);
+}
+
+
+void MainWindow::setTableButtonsEnabled(bool val)
+{
+    _table->setEnabled(val);
+    _dirButton->setEnabled(val);
+    _selectAllButton->setEnabled(val);
+    _unselectAllButton->setEnabled(val);
+    _downloadSelectedButton->setEnabled(val);
+}
+
+
+void MainWindow::audioDownloadAllClickedSlot()
+{
+    // build list of files to be downloaded
+    QItemSelectionModel * model = _table->selectionModel();
+    QList<QPair<QString, QString> > aListToDownload;
+
+    foreach (QModelIndex idx, model->selectedRows()) {
+        qDebug() << "Selected row: " << idx.row();
+        aListToDownload.append(
+                    QPair<QString, QString>(
+                        _audioList.at( idx.row()).toObject().value("url").toString(),
+                        QDir(_directory).filePath(
+                            _audioList.at( idx.row()).toObject().value("artist").toString()
+                            + " - "
+                            + _audioList.at( idx.row()).toObject().value("title").toString()
+                            + ".mp3") ));
+
+    }
+    qDebug()<<"list to download: " << aListToDownload;
+
+    // disable current interface
+    setTableButtonsEnabled(false);
+
+    // setup connections with multidownloader window
+    //TODO:
+    // - define signals for multidownloader
+    //      * dwld finished (enable back interface, update status back to "BlahBLah you can do this and this")
+    //      * dwloading one song (connect to audioDownloadingProgress to update status just for fun )
+    //      * maybe something else? - don't know
+    // - set up all connections here
+    //
+
+
+    // open multidownloader window and start downloading
+    //TODO:
+    // - create multidownloader
+    //      * don't forget ESC button to abort downloading
+    // - open its window here
 }
 
 

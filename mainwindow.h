@@ -61,6 +61,7 @@ private:
     QPushButton* _dirButton;
     QPushButton* _selectAllButton;
     QPushButton* _unselectAllButton;
+    QPushButton* _downloadSelectedButton;
 
     void setState(State_t iNewState){qDebug() << "New state: " <<iNewState; _state = iNewState; emit stateChangedSignal(iNewState);}
     void setStatus(const QString& iStatus){statusBar()->showMessage(iStatus);}
@@ -70,6 +71,8 @@ private:
     void requestAudios();
 
     void showAudioTable();
+
+    void setTableButtonsEnabled(bool);
 
 
 signals:
@@ -102,6 +105,7 @@ private slots:
     void audiosTableCellClickedSlot(int row, int column);
     void audioDownloadingProgress(qint64 iRcvd, qint64 iTotal, QString filename){setStatus("Downloading "+filename+" "+QString::number(100 * iRcvd/iTotal)+"%");}
     void audioDownloaded(bool success, QString reason);
+    void audioDownloadAllClickedSlot();
 };
 
 
