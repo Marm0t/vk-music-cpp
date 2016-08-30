@@ -16,6 +16,15 @@
 #include <QLabel>
 #include <QLineEdit>
 
+#include <QList>
+#include <QPair>
+#include <QWidget>
+#include <QProgressBar>
+#include <QLayout>
+#include <QMessageBox>
+#include <QSizePolicy>
+#include <QFileInfo>
+
 namespace Ui {
 class MainWindow;
 }
@@ -32,6 +41,8 @@ enum State_t
     AudioListDisplayed,
     AudioDownloading
 };
+
+class MultiDownloader;
 
 class MainWindow : public QMainWindow
 {
@@ -62,6 +73,7 @@ private:
     QPushButton* _selectAllButton;
     QPushButton* _unselectAllButton;
     QPushButton* _downloadSelectedButton;
+    MultiDownloader* _multiDownloader;
 
     void setState(State_t iNewState){qDebug() << "New state: " <<iNewState; _state = iNewState; emit stateChangedSignal(iNewState);}
     void setStatus(const QString& iStatus){statusBar()->showMessage(iStatus);}
@@ -72,15 +84,14 @@ private:
 
     void showAudioTable();
 
-    void setTableButtonsEnabled(bool);
-
-
 signals:
     void stateChangedSignal(State_t newState);
     void escPressed();
 
 public slots:
     void keyPressEvent(QKeyEvent*);
+    void setTableButtonsEnabled(bool);
+
 
 private slots:
     void statusMessageChangedSlot(const QString& iNewStatus){qDebug() << "New status message: " << iNewStatus;}
@@ -104,8 +115,9 @@ private slots:
     // download audio slots
     void audiosTableCellClickedSlot(int row, int column);
     void audioDownloadingProgress(qint64 iRcvd, qint64 iTotal, QString filename){setStatus("Downloading "+filename+" "+QString::number(100 * iRcvd/iTotal)+"%");}
-    void audioDownloaded(bool success, QString reason);
+    void audioDownloaded(bool success, QString reason, QString filename);
     void audioDownloadAllClickedSlot();
+    void audioDownloadedUpdateStatusSlot(bool success, QString reason, QString name){setStatus(QFileInfo(name).fileName()+" "+((success)?" saved":(" "+reason)));}
 };
 
 
@@ -120,7 +132,7 @@ public:
 
 signals:
     void progressSignal(qint64 iRcvd, qint64 iTotal, QString filename);
-    void downloaded(bool success, QString reason);
+    void downloaded(bool success, QString reason, QString filename);
 
 private slots:
     void fileDownloadProgressSLot(qint64 iRcvd, qint64 iTotal);
@@ -134,6 +146,40 @@ private:
     QNetworkReply * _reply;
 };
 
+
+typedef QList<QPair<QString, QString> > ListFilesToDownload_t;
+
+class MultiDownloader: public QWidget
+{
+    Q_OBJECT
+public:
+    MultiDownloader(const ListFilesToDownload_t& iList, QWidget* parent);
+    ~MultiDownloader();
+
+    void downloadOneItem();
+protected:
+    void closeEvent(QCloseEvent* event);
+signals:
+    void finished();
+    void oneFileDownloaded(bool success, QString reason, QString filename);
+
+private slots:
+    void progressSlot(qint64 iRcvd, qint64 iTotal, QString filename);
+    void downloadedSlot(bool success, QString reason, QString filename);
+
+private:
+    ListFilesToDownload_t _list;
+    QNetworkAccessManager* _netMgr;
+    QLabel * label;
+    QLabel * currentLabel;
+    QProgressBar * currentBar;
+    QLabel * totalLabel;
+    QProgressBar * totalBar;
+    QPushButton * cancelButton;
+
+    bool _finished;
+
+};
 
 #endif // MAINWINDOW_H
 

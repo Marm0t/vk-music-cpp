@@ -25,7 +25,7 @@
 void MainWindow::keyPressEvent(QKeyEvent* ke)
 {
 
-    if (ke->key()==Qt::Key_Escape && _state==AudioDownloading)
+    if (ke->key()==Qt::Key_Escape)
     {
         emit escPressed();
     }
@@ -37,7 +37,8 @@ MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow),
     _authWebView(0),reconnectButton(0),cacheButton(0),_table(0),_directory(QDir::currentPath()),
-    _dirLabel(0), _dirButton(0), _selectAllButton(0), _unselectAllButton(0)
+    _dirLabel(0), _dirButton(0), _selectAllButton(0), _unselectAllButton(0), _downloadSelectedButton(0),
+    _multiDownloader(0)
 {
     // configure UI
     ui->setupUi(this);
@@ -345,7 +346,7 @@ void MainWindow::showAudioTable()
     _selectAllButton->show();
     _unselectAllButton->show();
     _table->show();
-    setStatus("Select audios to download or download them one by one");
+    setTableButtonsEnabled(true);
 }
 
 
@@ -376,7 +377,7 @@ void MainWindow::audiosTableCellClickedSlot(int row, int column)
 
         FileDownloader* aDownloader = new FileDownloader(aFilename, aUrl, _netManager);
         // connect all signals to slots
-        connect(aDownloader, SIGNAL(downloaded(bool,QString)), this, SLOT(audioDownloaded(bool,QString)));
+        connect(aDownloader, SIGNAL(downloaded(bool,QString)), this, SLOT(audioDownloaded(bool,QString,QString)));
         connect(aDownloader, SIGNAL(progressSignal(qint64,qint64,QString)), this, SLOT(audioDownloadingProgress(qint64,qint64,QString)));
         connect(this, SIGNAL(escPressed()), aDownloader, SLOT(fileDownloadAbort()));
 
@@ -386,11 +387,11 @@ void MainWindow::audiosTableCellClickedSlot(int row, int column)
 }
 
 
-void MainWindow::audioDownloaded(bool success, QString reason)
+void MainWindow::audioDownloaded(bool success, QString reason, QString filename)
 {
     if(!success)
     {
-        QMessageBox::warning(this, "OOPS!", reason);
+        QMessageBox::warning(this, "OOPS!", "Cannot download " + filename+"\n"+reason);
     }
     setTableButtonsEnabled(true);
     setStatus(reason);
@@ -405,6 +406,7 @@ void MainWindow::setTableButtonsEnabled(bool val)
     _selectAllButton->setEnabled(val);
     _unselectAllButton->setEnabled(val);
     _downloadSelectedButton->setEnabled(val);
+    if(val) setStatus("Select audios to download or download them one by one");
 }
 
 
@@ -431,21 +433,14 @@ void MainWindow::audioDownloadAllClickedSlot()
     // disable current interface
     setTableButtonsEnabled(false);
 
+    _multiDownloader = new MultiDownloader(aListToDownload, this);
     // setup connections with multidownloader window
-    //TODO:
-    // - define signals for multidownloader
-    //      * dwld finished (enable back interface, update status back to "BlahBLah you can do this and this")
-    //      * dwloading one song (connect to audioDownloadingProgress to update status just for fun )
-    //      * maybe something else? - don't know
-    // - set up all connections here
-    //
+    connect(_multiDownloader, &MultiDownloader::finished, this,  [=]{this->setTableButtonsEnabled(true);});
+    connect(_multiDownloader, SIGNAL(oneFileDownloaded(bool,QString,QString)), this, SLOT(audioDownloadedUpdateStatusSlot(bool,QString,QString)));
+    connect(this, SIGNAL(escPressed()), _multiDownloader, SLOT(close()));
 
-
-    // open multidownloader window and start downloading
-    //TODO:
-    // - create multidownloader
-    //      * don't forget ESC button to abort downloading
-    // - open its window here
+    _multiDownloader->show();
+    _multiDownloader->downloadOneItem();
 }
 
 
@@ -458,7 +453,7 @@ void FileDownloader::download()
     // check if file already exist
     if (QFile::exists(_filename))
     {
-        emit downloaded(false, "File "+_filename+" already exists." );
+        emit downloaded(false, "File "+_filename+" already exists.", _filename );
         return;
     }
     // start download
@@ -480,35 +475,35 @@ void FileDownloader::fileDownloadedSlot()
 
     if(aReply->error() != QNetworkReply::NoError)
     {
-        emit downloaded(false, aReply->errorString());
+        emit downloaded(false, aReply->errorString(), _filename);
         return;
     }
     if (statusCode != 200)
     {
-        emit downloaded(false, aReply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString());
+        emit downloaded(false, aReply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString(), _filename);
         return;
     }
     if (QFile::exists(_filename))
     {
-        emit downloaded(false, "File "+_filename+" already exists");
+        emit downloaded(false, "File "+_filename+" already exists", _filename);
         return;
     }
 
     QFile file(_filename);
     if (!file.open(QIODevice::WriteOnly))
     {
-        emit downloaded(false, "Cannot create file "+_filename);
+        emit downloaded(false, "Cannot create file "+_filename, _filename);
         return;
     }
     qint64 aRes = file.write(aData);
     if (aRes>1)
     {
-        emit downloaded(true, "File saved ["+ _filename+"]");
+        emit downloaded(true, "File saved ["+ _filename+"]", _filename);
         file.close();
 
     }else
     {
-        emit downloaded(false, "Cannot write to the file ["+ _filename+"]: "+QString::number(aRes));
+        emit downloaded(false, "Cannot write to the file ["+ _filename+"]: "+QString::number(aRes), _filename);
         file.remove();
     }
     this->deleteLater();
@@ -527,3 +522,103 @@ void FileDownloader::fileDownloadAbort()
     this->deleteLater();
 }
 
+
+/******************
+ * MultiDownloader
+ *****************/
+MultiDownloader::MultiDownloader(const ListFilesToDownload_t& iList, QWidget* parent):
+    QWidget(parent, Qt::Window),
+    _list(iList), _finished(false)
+{
+    setWindowFlags( Qt::Tool );
+    setWindowModality( Qt::ApplicationModal);
+    setAttribute(Qt::WA_DeleteOnClose);
+    this->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+    if(parent)
+        setMaximumWidth(parent->width());
+
+    _netMgr = new QNetworkAccessManager(this);
+
+    label = new QLabel("Downloading...");
+    currentLabel = new QLabel();
+    currentBar = new QProgressBar();
+    totalLabel = new QLabel();
+    totalBar = new QProgressBar();
+    cancelButton = new QPushButton("Cancel");
+
+    connect(cancelButton, SIGNAL(clicked(bool)), this, SLOT(close()));
+
+    QVBoxLayout *layout = new QVBoxLayout();
+    layout->addWidget(label);
+    layout->addWidget(currentLabel);
+    layout->addWidget(currentBar);
+    layout->addWidget(totalLabel);
+    layout->addWidget(totalBar);
+    layout->addWidget(cancelButton);
+
+    setLayout(layout);
+    show();
+}
+MultiDownloader::~MultiDownloader(){_netMgr->deleteLater();}
+
+void MultiDownloader::downloadOneItem()
+{
+    if (_list.empty())
+    {
+        qDebug() << "Nothing to download... Closing multiloader";
+        _finished = true;
+        this->close();
+        return;
+    }
+
+    QString url = _list.begin()->first;
+    QString filename = _list.begin()->second;
+    _list.removeFirst();
+    FileDownloader * loader = new FileDownloader(filename, url, _netMgr);
+    connect(loader, SIGNAL(progressSignal(qint64,qint64,QString)), this, SLOT(progressSlot(qint64,qint64,QString)));
+    connect(loader, SIGNAL(downloaded(bool,QString,QString)), this, SLOT(downloadedSlot(bool,QString,QString)));
+    qDebug()<< "Downloading " << filename;
+    currentLabel->setText("Downloading " + filename);
+    loader->download();
+}
+
+
+void MultiDownloader::closeEvent(QCloseEvent* event)
+{
+    if(_finished)
+    {
+        emit finished();
+        event->accept();
+        return;
+    }
+    // ask if the user it sure he wants to cancel the download
+    QMessageBox::StandardButton reply;
+    reply = QMessageBox::question(this, "Cancel download",
+                                  "Are you sure you want to cancel download?\n"
+                                  "Downloaded files won't be deleted.",
+                                  QMessageBox::Yes|QMessageBox::No);
+    if (reply != QMessageBox::Yes)
+    {
+        event->ignore();
+    }else{
+        qDebug() << "Closing multidownloader window";
+        emit finished();
+        event->accept();
+    }
+}
+
+void MultiDownloader::progressSlot(qint64 iRcvd, qint64 iTotal, QString filename)
+{
+    currentBar->setValue(100*iRcvd/iTotal);
+    currentLabel->setText(filename+": "+QString::number(iRcvd/1024)+" out of "+QString::number(iTotal/1024)+ " Kbytes");
+}
+void MultiDownloader::downloadedSlot(bool success, QString reason, QString filename)
+{
+    if (!success)
+    {
+        qDebug()<< "Download error: "+reason;
+    }else qDebug()<< "Success";
+    emit oneFileDownloaded(success, reason, filename);
+    downloadOneItem();
+}
