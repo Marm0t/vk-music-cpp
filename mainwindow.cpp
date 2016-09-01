@@ -309,9 +309,9 @@ void MainWindow::audiosTableCellClickedSlot(int row, int column)
         setTableButtonsEnabled(false);
 
         QString aFilename = QDir(_directory).filePath(
-                _audioList.at(row).toObject().value("artist").toString()
+                _audioList.at(row).toObject().value("artist").toString().remove(':')
                 + " - "
-                + _audioList.at(row).toObject().value("title").toString()
+                + _audioList.at(row).toObject().value("title").toString().remove(':')
                 + ".mp3");
 
         QString aUrl = _audioList.at(row).toObject().value("url").toString();
@@ -319,7 +319,7 @@ void MainWindow::audiosTableCellClickedSlot(int row, int column)
 
         FileDownloader* aDownloader = new FileDownloader(aFilename, aUrl, _netManager);
         // connect all signals to slots
-        connect(aDownloader, SIGNAL(downloaded(bool,QString)), this, SLOT(audioDownloaded(bool,QString,QString)));
+        connect(aDownloader, SIGNAL(downloaded(bool,QString, QString)), this, SLOT(audioDownloaded(bool,QString,QString)));
         connect(aDownloader, SIGNAL(progressSignal(qint64,qint64,QString)), this, SLOT(audioDownloadingProgress(qint64,qint64,QString)));
         connect(this, SIGNAL(escPressed()), aDownloader, SLOT(fileDownloadAbort()));
 
@@ -470,11 +470,12 @@ void FileDownloader::fileDownloadAbort()
  *****************/
 MultiDownloader::MultiDownloader(const ListFilesToDownload_t& iList, QWidget* parent):
     QWidget(parent, Qt::Window),
-    _list(iList), _finished(false)
+    _list(iList), _finished(false), _countTotal(iList.size()), _countDone(0)
 {
     setWindowFlags( Qt::Tool );
     setWindowModality( Qt::ApplicationModal);
     setAttribute(Qt::WA_DeleteOnClose);
+    setWindowTitle("Download");
     this->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     if(parent)
@@ -553,7 +554,9 @@ void MultiDownloader::closeEvent(QCloseEvent* event)
 void MultiDownloader::progressSlot(qint64 iRcvd, qint64 iTotal, QString filename)
 {
     currentBar->setValue(100*iRcvd/iTotal);
+    totalBar->setValue( _countDone*100/_countTotal +  ((double)iRcvd/iTotal) * 100/_countTotal );
     currentLabel->setText(filename+": "+QString::number(iRcvd/1024)+" out of "+QString::number(iTotal/1024)+ " Kbytes");
+    totalLabel->setText("File "+QString::number(_countDone+1)+" out of "+QString::number(_countTotal));
 }
 void MultiDownloader::downloadedSlot(bool success, QString reason, QString filename)
 {
@@ -562,5 +565,6 @@ void MultiDownloader::downloadedSlot(bool success, QString reason, QString filen
         qDebug()<< "Download error: "+reason;
     }else qDebug()<< "Success";
     emit oneFileDownloaded(success, reason, filename);
+    _countDone++;
     downloadOneItem();
 }

@@ -89,7 +89,6 @@ public slots:
     void keyPressEvent(QKeyEvent*);
     void setTableButtonsEnabled(bool);
 
-
 private slots:
     void statusMessageChangedSlot(const QString& iNewStatus){qDebug() << "New status message: " << iNewStatus;}
     void stateChangedSlot(State_t iNewState);
@@ -108,7 +107,7 @@ private slots:
 
     // download audio slots
     void audiosTableCellClickedSlot(int row, int column);
-    void audioDownloadingProgress(qint64 iRcvd, qint64 iTotal, QString filename){setStatus("Downloading "+filename+" "+QString::number(100 * iRcvd/iTotal)+"%");}
+    void audioDownloadingProgress(qint64 iRcvd, qint64 iTotal, QString filename){setStatus("Downloading "+QFileInfo(filename).fileName()+" "+QString::number(100 * iRcvd/iTotal)+"%");}
     void audioDownloaded(bool success, QString reason, QString filename);
     void audioDownloadAllClickedSlot();
     void audioDownloadedUpdateStatusSlot(bool success, QString reason, QString name){setStatus(QFileInfo(name).fileName()+" "+((success)?" saved":(" "+reason)));}
@@ -172,6 +171,8 @@ private:
     QPushButton * cancelButton;
 
     bool _finished;
+    int _countTotal;
+    int _countDone;
 
 };
 
