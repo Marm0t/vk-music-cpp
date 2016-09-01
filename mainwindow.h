@@ -90,6 +90,7 @@ public slots:
     void setTableButtonsEnabled(bool);
 
 private slots:
+    void showAbout();
     void statusMessageChangedSlot(const QString& iNewStatus){qDebug() << "New status message: " << iNewStatus;}
     void stateChangedSlot(State_t iNewState);
     void replyReceivedSlot(QNetworkReply* iReply){qDebug() << "Reply received from " << iReply->url().host();}

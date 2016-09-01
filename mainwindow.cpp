@@ -6,7 +6,6 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
-
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QScrollBar>
@@ -21,6 +20,8 @@
 
 #include <QItemSelectionModel>
 #include <QModelIndex>
+#include <QIcon>
+#include <QTextBrowser>
 
 void MainWindow::keyPressEvent(QKeyEvent* ke)
 {
@@ -53,7 +54,6 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(this, SIGNAL(stateChangedSignal(State_t)), this, SLOT(stateChangedSlot(State_t)));
     connect(_netManager, SIGNAL(finished(QNetworkReply*)), this, SLOT(replyReceivedSlot(QNetworkReply*)));
 
-
     // set initial state
     setState(NotStarted);
     setStatus("Starting...");
@@ -62,6 +62,42 @@ MainWindow::MainWindow(QWidget *parent) :
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::showAbout()
+{
+    QString aVersion = "Version: ";
+    aVersion.append(APP_VERSION);
+    aVersion.append(" (build ");
+    aVersion.append(__DATE__);
+    aVersion.append(" ");
+    aVersion.append(__TIME__);
+    aVersion.append(")");
+
+
+    QDialog dlg;
+    dlg.setWindowTitle("About");
+    QLabel *versonLbl = new QLabel(aVersion);
+    versonLbl->setTextInteractionFlags(Qt::LinksAccessibleByMouse|Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse);
+
+    QPushButton *btn = new QPushButton("OK");
+    QPushButton *btnQT = new QPushButton("About QT");
+    QTextBrowser *text = new QTextBrowser();
+
+    text->setSource( QUrl("qrc:/other/about.htm"));
+    text->setOpenExternalLinks(true);
+
+    connect(btn, SIGNAL(clicked(bool)), &dlg, SLOT(close()));
+    connect(btnQT, &QPushButton::clicked, this,  [=]{QMessageBox::aboutQt(0);});
+
+    QVBoxLayout * lay = new QVBoxLayout;
+    lay->addWidget(versonLbl);
+    lay->addWidget(text);
+    lay->addWidget(btn);
+    lay->addWidget(btnQT);
+    dlg.setLayout(lay);
+
+    dlg.exec();
 }
 
 void MainWindow::stateChangedSlot(State_t iNewState)
@@ -119,7 +155,7 @@ void MainWindow::requestToken()
     setState(TokenRequested);
     setStatus("Connecting to vk.com");
 
-    _authenticator = new VkAuthenticator("5601291");
+    _authenticator = new VkAuthenticator("5601291", "audio");
     connect(_authenticator, SIGNAL(error(QString)), this, SLOT(authenticatorErrorSlot(QString)));
     connect(_authenticator, SIGNAL(tokenReceived(QString)), this, SLOT(authenticatorTokenReceivedSlot(QString)));
     _authenticator->authenticate();
@@ -203,45 +239,37 @@ void MainWindow::showAudioTable()
 {
     setStatus("Building audios table");
 
-    if(!_dirLabel) _dirLabel = new QLineEdit(_directory, ui->_mainWidget);
-    _dirLabel->setEnabled(false);
-    if(!_dirButton) _dirButton = new QPushButton("Browse", ui->_mainWidget);
-    if(!_selectAllButton) _selectAllButton = new QPushButton("Select all", ui->_mainWidget);
-    if(!_unselectAllButton) _unselectAllButton = new QPushButton("Unselect all", ui->_mainWidget);
+    if(!_dirLabel)               _dirLabel = new QLineEdit(_directory, ui->_mainWidget);
+    if(!_dirButton)              _dirButton = new QPushButton("Browse", ui->_mainWidget);
+    if(!_selectAllButton)        _selectAllButton = new QPushButton("Select all", ui->_mainWidget);
+    if(!_unselectAllButton)      _unselectAllButton = new QPushButton("Unselect all", ui->_mainWidget);
     if(!_downloadSelectedButton) _downloadSelectedButton = new QPushButton("Download selected", ui->_mainWidget);
-    if (!_table) _table = new QTableWidget(ui->_mainWidget);
+    if (!_table)                 _table = new QTableWidget(ui->_mainWidget);
 
+    _dirLabel->setEnabled(false);
+    _dirLabel->setAlignment(Qt::AlignRight);
     QRect aMG = ui->_mainWidget->geometry(); // main widget geometry
 
-    _downloadSelectedButton->setGeometry(0+aMG.width()-_downloadSelectedButton->geometry().width(),
-                                         aMG.height()-_downloadSelectedButton->geometry().height(),
-                                        _downloadSelectedButton->geometry().width(),
-                                        _downloadSelectedButton->geometry().height());
+    QHBoxLayout * hlay = new QHBoxLayout;
 
-    _unselectAllButton->setGeometry(_downloadSelectedButton->x()-_unselectAllButton->geometry().width(),
-                                    aMG.height()-_unselectAllButton->geometry().height(),
-                                   _unselectAllButton->geometry().width(),
-                                   _unselectAllButton->geometry().height());
+    QPushButton * _settingsButton = new QPushButton();
+    _settingsButton->setIcon(QIcon(":img/About.png"));
 
-    _selectAllButton->setGeometry(_unselectAllButton->x() -_selectAllButton->geometry().width(),
-                                  aMG.height()-_selectAllButton->geometry().height(),
-                                  _selectAllButton->geometry().width(),
-                                  _selectAllButton->geometry().height());
-
-    _dirButton->setGeometry(_selectAllButton->x()-_dirButton->geometry().width(),
-                            aMG.height()-_dirButton->geometry().height(),
-                            _dirButton->geometry().width(),
-                            _dirButton->geometry().height());
-
-    _dirLabel->setGeometry(0,
-                           aMG.height()-_dirButton->geometry().height(),
-                           _dirButton->x(),
-                           _dirLabel->geometry().height());
-
+    hlay->addWidget(_settingsButton);
+    hlay->addWidget(_dirLabel);
+    hlay->addWidget(_dirButton);
+    hlay->addWidget(_selectAllButton);
+    hlay->addWidget(_unselectAllButton);
+    hlay->addWidget(_downloadSelectedButton);
 
     _table->setGeometry(0,0,
                         aMG.width(),
                         aMG.height()-_dirButton->geometry().height());
+
+    QVBoxLayout * vlay = new QVBoxLayout;
+    vlay->addWidget(_table);
+    vlay->addLayout(hlay);
+    ui->_mainWidget->setLayout(vlay);
 
     _table->setColumnCount(3);
     _table->setRowCount(_audioList.size()-1);
@@ -251,12 +279,12 @@ void MainWindow::showAudioTable()
 
     int width = _table->geometry().width();
     _table->setColumnWidth(0, width*.3);
-    _table->setColumnWidth(1, width*.5);
+    _table->setColumnWidth(1, width*.48);
     _table->setColumnWidth(2, width*.175);
     QStringList hdrs;
     hdrs.push_back("Artist");
     hdrs.push_back("Title");
-    hdrs.push_back("");
+    hdrs.push_back("Download");
     _table->setHorizontalHeaderLabels(hdrs);
     _table->verticalHeader()->hide();
     int row = 0;
@@ -273,13 +301,13 @@ void MainWindow::showAudioTable()
         ++row;
     }
 
-
     // connections
     connect(_dirButton, SIGNAL(clicked()), SLOT(browse()));
     connect(_selectAllButton, SIGNAL(clicked()), _table, SLOT(selectAll()));
     connect(_unselectAllButton, SIGNAL(clicked()), _table, SLOT(clearSelection()));
     connect(_table, SIGNAL(cellClicked(int,int)), this, SLOT(audiosTableCellClickedSlot(int,int)));
     connect(_downloadSelectedButton, SIGNAL(clicked(bool)), this, SLOT(audioDownloadAllClickedSlot()));
+    connect(_settingsButton, SIGNAL(clicked(bool)), this, SLOT(showAbout()));
 
     // show everything
     _downloadSelectedButton->show();
@@ -320,7 +348,8 @@ void MainWindow::audiosTableCellClickedSlot(int row, int column)
         FileDownloader* aDownloader = new FileDownloader(aFilename, aUrl, _netManager);
         // connect all signals to slots
         connect(aDownloader, SIGNAL(downloaded(bool,QString, QString)), this, SLOT(audioDownloaded(bool,QString,QString)));
-        connect(aDownloader, SIGNAL(progressSignal(qint64,qint64,QString)), this, SLOT(audioDownloadingProgress(qint64,qint64,QString)));
+        connect(aDownloader, SIGNAL(progressSignal(qint64,qint64,QString)),
+                this, SLOT(audioDownloadingProgress(qint64,qint64,QString)));
         connect(this, SIGNAL(escPressed()), aDownloader, SLOT(fileDownloadAbort()));
 
         aDownloader->download();
@@ -378,13 +407,13 @@ void MainWindow::audioDownloadAllClickedSlot()
     _multiDownloader = new MultiDownloader(aListToDownload, this);
     // setup connections with multidownloader window
     connect(_multiDownloader, &MultiDownloader::finished, this,  [=]{this->setTableButtonsEnabled(true);});
-    connect(_multiDownloader, SIGNAL(oneFileDownloaded(bool,QString,QString)), this, SLOT(audioDownloadedUpdateStatusSlot(bool,QString,QString)));
+    connect(_multiDownloader, SIGNAL(oneFileDownloaded(bool,QString,QString)),
+            this, SLOT(audioDownloadedUpdateStatusSlot(bool,QString,QString)));
     connect(this, SIGNAL(escPressed()), _multiDownloader, SLOT(close()));
 
     _multiDownloader->show();
     _multiDownloader->downloadOneItem();
 }
-
 
 
 /*******************
