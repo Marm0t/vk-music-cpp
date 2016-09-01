@@ -4,10 +4,7 @@
 #include <QMainWindow>
 #include <QStatusBar>
 #include <QDebug>
-#include <QWebEngineView>
 #include <QUrl>
-#include <QWebEngineProfile>
-#include <QWebEngineCookieStore>
 #include <QPushButton>
 #include <QNetworkReply>
 #include <QJsonArray>
@@ -24,6 +21,7 @@
 #include <QMessageBox>
 #include <QSizePolicy>
 #include <QFileInfo>
+#include "vkauthenticator.h"
 
 namespace Ui {
 class MainWindow;
@@ -55,12 +53,10 @@ public:
 private:
     Ui::MainWindow *ui;
     State_t _state;
-    QWebEngineView *_authWebView;
     QString _token;
     QString _lastError;
 
     QPushButton *reconnectButton;
-    QPushButton *cacheButton;
 
     QNetworkAccessManager *_netManager;
 
@@ -74,6 +70,7 @@ private:
     QPushButton* _unselectAllButton;
     QPushButton* _downloadSelectedButton;
     MultiDownloader* _multiDownloader;
+    VkAuthenticator* _authenticator;
 
     void setState(State_t iNewState){qDebug() << "New state: " <<iNewState; _state = iNewState; emit stateChangedSignal(iNewState);}
     void setStatus(const QString& iStatus){statusBar()->showMessage(iStatus);}
@@ -101,12 +98,9 @@ private slots:
     void browse();
 
     // token view slots
-    void tokenViewLoadStartedSlot(){setStatus("Loading from "+_authWebView->url().host());}
-    void tokenViewloadProgressSlot(int iProgress){setStatus(QString::number(iProgress)+"% "+_authWebView->url().host());}
-    void tokenViewLoadFinishedSlot(bool iResult);
-    void tokenViewUrlChangedSlot(const QUrl &url);
+    void authenticatorErrorSlot(QString str);
+    void authenticatorTokenReceivedSlot(QString str);
     void retryAuthSLot(){setState(NotStarted);}
-    void clearCacheSlot();
 
     // request audios slots
     void audiosListDownloadProgressSlot(qint64 bytesReceived, qint64 bytesTotal){setStatus("Downloading list of audios: "+QString::number(100 * bytesReceived/bytesTotal)+"%");}
