@@ -247,7 +247,7 @@ void MainWindow::showAudioTable()
     if (!_table)                 _table = new QTableWidget(ui->_mainWidget);
 
     _dirLabel->setEnabled(false);
-    _dirLabel->setAlignment(Qt::AlignRight);
+    _dirLabel->setAlignment(Qt::AlignLeft);
     QRect aMG = ui->_mainWidget->geometry(); // main widget geometry
 
     QHBoxLayout * hlay = new QHBoxLayout;
@@ -279,7 +279,7 @@ void MainWindow::showAudioTable()
 
     int width = _table->geometry().width();
     _table->setColumnWidth(0, width*.3);
-    _table->setColumnWidth(1, width*.48);
+    _table->setColumnWidth(1, width*.475);
     _table->setColumnWidth(2, width*.175);
     QStringList hdrs;
     hdrs.push_back("Artist");
