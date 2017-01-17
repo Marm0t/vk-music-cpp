@@ -1,4 +1,7 @@
 # VK-MUSIC
+
+**NOTE: Due to the [update of VK API](https://vk.com/dev/audio_api) that disables access to audio methods starting from December 2016 this tool is not working anymore.**
+
 Fast and easy way to download music from [vk.com](https://vk.com/).
 
 Just choose the folder to store your music, select audiofiles you want to download and click _Download selected_.
